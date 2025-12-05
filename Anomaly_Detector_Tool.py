@@ -435,7 +435,7 @@ def create_live_anomaly_tab():
                     ui.label("Pattern Editor").classes("text-body2 text-weight-bold q-mb-sm")
                     ui.label("Add, edit, or delete anomaly detection patterns").classes("text-caption text-grey-7 q-mb-md")
                     # Add new pattern section
-                    with ui.expansion("Add New Pattern", icon="add").classes("w-full q-mb-md")
+                    with ui.expansion("Add New Pattern", icon="add").classes("w-full q-mb-md"):
                         with ui.row().classes("w-full items-end q-gutter-sm"):
                             new_pattern_input = ui.input(
                                 "Regex Pattern",
@@ -1784,7 +1784,7 @@ def create_offline_anomaly_tab() -> None:
                                     if hasattr(progress, 'client') and hasattr(
                                         progress.client, 'has_socket_connection'
                                     ):
-                                        if progress.client.has_socket_connection():
+                                        if progress.client.has_socket_connection:
                                             new_value = completed / len(log_files)
                                             progress.value = new_value
                                             progress.update()
@@ -1842,35 +1842,36 @@ def create_offline_anomaly_tab() -> None:
 
                     # always show results, even if client disconnected / aborted
                     try:
-                        if progress.client.has_socket_connection():
+                        if progress.client.has_socket_connection:
                             progress.value = 1.0
                             progress.update()
                             await asyncio.sleep(0)
 
-                        with progress_container.clear()
-                        results_container = progress_container  # reuse container
-                        display_offline_results(all_anomalies, results_container)
+                        with progress_container:
+                            progress_container.clear()
+                        with results_container:
+                            display_offline_results(all_anomalies, results_container)
 
-                        # save anomalies JSON (helper assumed existing)
-                        save_path = save_anomalies_to_json(all_anomalies)
-                        try:
-                            with open(save_path, 'rb') as fh:
-                                ui.download(fh.read(), filename=os.path.basename(save_path))
-                        except Exception:
-                            pass
+                            # save anomalies JSON (helper assumed existing)
+                            save_path = save_anomalies_to_json(all_anomalies)
+                            try:
+                                with open(save_path, 'rb') as fh:
+                                    ui.download(fh.read(), filename=os.path.basename(save_path))
+                            except Exception:
+                                pass
 
-                        status_msg = (
-                            f'Analysis complete. Found {len(all_anomalies)} anomalies in '
-                            f'{completed}/{len(log_files)} files. Saved: {save_path}'
-                        )
-                        if analysis_state.get('should_abort'):
                             status_msg = (
-                                f'Analysis stopped. Found {len(all_anomalies)} anomalies in '
+                                f'Analysis complete. Found {len(all_anomalies)} anomalies in '
                                 f'{completed}/{len(log_files)} files. Saved: {save_path}'
                             )
-                        ui.notify(status_msg, type='positive' if not analysis_state.get(
-                            'should_abort'
-                        ) else 'warning')
+                            if analysis_state.get('should_abort'):
+                                status_msg = (
+                                    f'Analysis stopped. Found {len(all_anomalies)} anomalies in '
+                                    f'{completed}/{len(log_files)} files. Saved: {save_path}'
+                                )
+                            ui.notify(status_msg, type='positive' if not analysis_state.get(
+                                'should_abort'
+                            ) else 'warning')
                     except (RuntimeError, AttributeError):
                         # client is gone; just save results
                         print(
