@@ -21,9 +21,8 @@ from pathlib import Path
 DEFAULT_ANOMALY_PATTERNS: Dict[str, str] = {
     # Kernel and System Crashes
     r"Kernel panic": "KERNEL_PANIC",
-    r"Crashdump magic\[Collecting q6mem dump": "CRASH_DUMP",
+    r"Crashdump magic": "CRASH_DUMP",
     r"Call Trace": "CALL_TRACE",
-    r"Target Asserted": "Q6_CRASH",
     r"Segmentation Fault|segfault": "SEGMENTATION_FAULT",
     r"Backtrace": "BACKTRACE",
     r"watchdog bite": "WATCHDOG_BITE",
@@ -39,8 +38,6 @@ DEFAULT_ANOMALY_PATTERNS: Dict[str, str] = {
     # Device Reboot Loops
     r"Reboot Reason": "DEVICE_REBOOT",
     r"System restart": "DEVICE_REBOOT",
-    r"Watchdog bark": "WATCHDOG_REBOOT",
-
     # Interface Issues
     r"Interface down": "INTERFACE_DOWN",
     r"Link is down": "INTERFACE_DOWN",
@@ -64,25 +61,14 @@ DEFAULT_ANOMALY_PATTERNS: Dict[str, str] = {
     r"Configuration mismatch": "CONFIG_MISMATCH",
     r"Invalid configuration": "CONFIG_INVALID",
     r"Configuration error": "CONFIG_ERROR",
-
-    # PCI and Hardware Issues
-    r"PCI\S+device\S+ID\S+mismatch": "PCI_DEVICE_MISMATCH",
-    r"Hardware error": "HARDWARE_ERROR",
-
     # WiFi Specific Issues
-    r"wlan_serialization_timer_handler": "WLAN_SERIALIZATION_ISSUE",
-    r"mlme_connection_reset": "AGENT_DISCONNECTION",
-    r"mlme_ext_vap_down": "VAP_DOWN",
+    r"vap_down": "VAP_DOWN",
     r"Received CSA": "CHANNEL_SWITCH",
-    r"Steering is complete": "STEERING_ISSUE",
     r"Invalid beacon report": "BEACON_REPORT_ISSUE",
 
     # Resource Issues
     r"Resource manager crash": "RESOURCE_MANAGER_CRASH",
-    r"hostapd_core": "HOSTAPD_CRASH",
-
     # RCU and Timing Issues
-    r"RCU.*detected stall": "RCU_STALL",
     r"timeout waiting": "TIMEOUT",
 
     # Warnings
@@ -1955,8 +1941,9 @@ def display_offline_results(anomalies: List[Dict[str, Any]], container: ui.colum
                     select_all_cb = ui.checkbox("Select All", value=True)
                     ui.badge(str(len(anomalies))).props("color-primary")
 
-                def on_select_all(val):
+                def on_select_all(e):
                     nonlocal selected_categories
+                    val = e.args if hasattr(e, "args") else select_all_cb.value
                     if val:
                         selected_categories = set(categories.keys())
                     else:
@@ -2012,11 +1999,17 @@ def display_offline_results(anomalies: List[Dict[str, Any]], container: ui.colum
 
             # Add view button to emit row payload
             details_table.add_slot("body-cell-actions", r"""
-                <q-td props="props" auto-width>
+                <q-td :props="props" auto-width>
                     <q-btn dense flat color="primary" icon="visibility" label="View"
-                        @click="() => $parent.emit('view-anomaly', props.row)" />
+                        @click="$parent.$emit('view-anomaly', props.row)" />
                 </q-td>
             """)
+            # details_table.add_slot("body-cell-actions", r"""
+            #     <q-td props="props" auto-width>
+            #         <q-btn dense flat color="primary" icon="visibility" label="View"
+            #             @click="() => $parent.emit('view-anomaly', props.row)" />
+            #     </q-td>
+            # """)
             # Cache to avoid rereads
             _file_cache = {}
 
