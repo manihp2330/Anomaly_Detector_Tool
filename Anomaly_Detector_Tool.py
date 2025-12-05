@@ -2540,7 +2540,8 @@ def save_anomalies_to_json(anomalies: List[Dict[str, Any]]) -> str:
     try:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         # Ensure logs directory exists
-        out_dir = os.path.join('logs')
+        #out_dir = os.path.join('logs')
+        out_dir = "C:/Amomaly_logs"
         try:
             os.makedirs(out_dir, exist_ok=True)
         except Exception:
