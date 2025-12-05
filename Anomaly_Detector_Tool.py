@@ -1927,12 +1927,16 @@ def display_offline_results(anomalies: List[Dict[str, Any]], container: ui.colum
             with ui.expansion("Category Summary", icon="category").classes("w-full q-mb-md"):
                 checkboxes = {}
                 selected_categories = set(categories.keys())
+                is_programmatic_select_all = False  # guard to avoid recursive event storms
 
                 def apply_filter():
+                    """Apply current category selection to details table."""
                     if details_table is None:
                         return
-                    # Only show anomalies whose category is in the selected set
-                    filtered = [a for a in anomalies if a.get("category") in selected_categories]
+                    filtered = [
+                        a for a in anomalies
+                        if a.get("category") in selected_categories
+                    ]
                     details_table.rows = filtered
                     details_table.update()
 
@@ -1942,17 +1946,34 @@ def display_offline_results(anomalies: List[Dict[str, Any]], container: ui.colum
                     ui.badge(str(len(anomalies))).props("color-primary")
 
                 def on_select_all(e):
-                    nonlocal selected_categories
-                    val = e.args if hasattr(e, "args") else select_all_cb.value
+                    nonlocal selected_categories, is_programmatic_select_all
+                    # If this change was triggered programmatically from child checkboxes,
+                    # do NOT run the full select-all logic again.
+                    if is_programmatic_select_all:
+                        return
+
+                    # NiceGUI usually passes the new value in e.args or via .value
+                    if hasattr(e, "args") and isinstance(e.args, bool):
+                        val = e.args
+                    elif hasattr(e, "value"):
+                        val = e.value
+                    else:
+                        val = bool(select_all_cb.value)
+
                     if val:
+                        # Select all categories
                         selected_categories = set(categories.keys())
                     else:
+                        # Deselect all categories
                         selected_categories.clear()
 
                     # Sync individual checkboxes
                     for cat, cb in checkboxes.items():
+                        is_programmatic_select_all = True
                         cb.value = val
                         cb.update()
+                        is_programmatic_select_all = False
+
                     apply_filter()
 
                 select_all_cb.on("update:model-value", on_select_all)
@@ -1964,18 +1985,25 @@ def display_offline_results(anomalies: List[Dict[str, Any]], container: ui.colum
                             cb = ui.checkbox(category, value=True)
                             checkboxes[category] = cb
                         ui.badge(str(len(items))).props("color-negative")
+
                     def make_handler(cat, cbox):
                         def _on_change(e):
+                            nonlocal is_programmatic_select_all
+
+                            # Update selected_categories based on this single checkbox
                             if cbox.value:
                                 selected_categories.add(cat)
                             else:
                                 selected_categories.discard(cat)
 
-                            # Maintain Select All state
+                            # Maintain Select All visual state, but avoid triggering its logic
                             all_selected = len(selected_categories) == len(categories)
                             if select_all_cb.value != all_selected:
+                                is_programmatic_select_all = True
                                 select_all_cb.value = all_selected
                                 select_all_cb.update()
+                                is_programmatic_select_all = False
+
                             apply_filter()
                         return _on_change
 
