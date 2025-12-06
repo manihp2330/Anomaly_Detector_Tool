@@ -1744,7 +1744,7 @@ def create_offline_anomaly_tab() -> None:
                                 done, pending_tasks = await asyncio.wait(
                                     pending_tasks,
                                     return_when=asyncio.FIRST_COMPLETED,
-                                    timeout=60.0
+                                    #timeout=60.0
                                 )
 
                                 # process completed tasks
