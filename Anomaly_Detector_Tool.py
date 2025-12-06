@@ -1,6 +1,6 @@
 from __future__ import annotations
 from nicegui import ui
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Iterable
 from datetime import datetime
 import re
 import os
@@ -154,56 +154,67 @@ class AnomalyDetector:
 
         self._patterns_compiled = True
 
-    def detect_anomalies(self, log_text: str) -> List[Dict[str, Any]]:
-        """Optimized anomaly detection using combined regex pattern"""
-        # Lazy compile patterns on first use
+    def _detect_from_lines(self, lines: Iterable[str]) -> List[Dict[str, Any]]:
+        """Core anomaly detection that works on any line iterable (streaming-friendly)."""
         if not self._patterns_compiled:
             self._compile_patterns()
 
         anomalies: List[Dict[str, Any]] = []
-        lines = log_text.split("\n")
+        ts = datetime.now().isoformat()
 
         # Use combined pattern for faster matching if available
         if self._combined_pattern and self._pattern_map:
+            pattern = self._combined_pattern
+            group_map = self._pattern_map
+
             for line_num, line in enumerate(lines, start=1):
-                if not line.strip():  # Skip empty lines
+                if not line:
+                    continue
+                stripped = line.strip()
+                if not stripped:
                     continue
 
-                match = self._combined_pattern.search(line)
+                match = pattern.search(stripped)
                 if match:
-                    # Find which group matched
-                    for group_name, category in self._pattern_map.items():
+                    for group_name, category in group_map.items():
                         if match.group(group_name):
                             anomalies.append(
                                 {
                                     "line_number": line_num,
-                                    "line": line.strip(),
+                                    "line": stripped,
                                     "pattern": match.group(group_name),
                                     "category": category,
-                                    "timestamp": datetime.now().isoformat(),
+                                    "timestamp": ts,
                                 }
                             )
                             break  # Only record first match per line
         else:
-            # Fallback to original method
+            compiled_patterns = self.compiled_patterns
             for line_num, line in enumerate(lines, start=1):
-                if not line.strip():  # Skip empty lines
+                if not line:
+                    continue
+                stripped = line.strip()
+                if not stripped:
                     continue
 
-                for pat, category in self.compiled_patterns.items():
-                    if pat.search(line):
+                for pat, category in compiled_patterns.items():
+                    if pat.search(stripped):
                         anomalies.append(
                             {
                                 "line_number": line_num,
-                                "line": line.strip(),
+                                "line": stripped,
                                 "pattern": pat.pattern,
                                 "category": category,
-                                "timestamp": datetime.now().isoformat(),
+                                "timestamp": ts,
                             }
                         )
                         break  # Only record first match per line
 
         return anomalies
+    def detect_anomalies(self, log_text: str) -> List[Dict[str, Any]]:
+        """Backward-compatible API for callers who pass a single string."""
+        return self._detect_from_lines(log_text.splitlines())
+    
     def categorize_anomalies(
                             self,
                             anomalies: List[Dict[str, Any]],
@@ -324,19 +335,21 @@ def create_anomaly_page():
 
     # Tabs: Live vs Offline
     with ui.tabs().classes("w-full") as tabs:
-        live_tab = ui.tab("Live Anomaly", icon="sensors")
         offline_tab = ui.tab("Offline Anomaly", icon="folder_open")
+        live_tab = ui.tab("Live Anomaly", icon="sensors")
+        
 
     # Tab Panels
     with ui.tab_panels(tabs, value=live_tab).classes("w-full"):
+        # ------------------ OFFLINE TAB ------------------
+        with ui.tab_panel(offline_tab):
+            create_offline_anomaly_tab()
 
         # ------------------ LIVE TAB ------------------
         with ui.tab_panel(live_tab):
             create_live_anomaly_tab()
 
-        # ------------------ OFFLINE TAB ------------------
-        with ui.tab_panel(offline_tab):
-            create_offline_anomaly_tab()
+        
 def create_live_anomaly_tab():
 
     # Create the Live Anomaly Detection Tab
@@ -1665,18 +1678,17 @@ def create_offline_anomaly_tab() -> None:
                             )
                             print(file_info)
 
-                            read_start = _time.time()
-                            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                log_content = f.read()
-                            read_time = _time.time() - read_start
-
-                            if analysis_state['should_abort']:
-                                print(f"Aborted while reading {os.path.basename(log_file)}")
-                                return []
-
+                            # STREAMING read + analysis in one pass
                             analyze_start = _time.time()
-                            anomalies = ANOMALY_DETECTOR.detect_anomalies(log_content)
+                            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                if analysis_state['should_abort']:
+                                    print(f"Aborted before analyzing {os.path.basename(log_file)}")
+                                    return [], None, None
+
+                                # use streaming line iterator
+                                anomalies = ANOMALY_DETECTOR._detect_from_lines(f)
                             analyze_time = _time.time() - analyze_start
+                            read_time = 0.0  # merged into analyze_time
 
                             for anomaly in anomalies:
                                 anomaly['file'] = os.path.basename(log_file)
@@ -1690,17 +1702,17 @@ def create_offline_anomaly_tab() -> None:
                                 perf_info = (
                                     f"{net} {os.path.basename(log_file)} "
                                     f"(file_size {file_size / 1024 / 1024:.1f} MB) "
-                                    f"total={total_time:.2f}s, read={read_time:.2f}s, "
-                                    f"analyze={analyze_time:.2f}s"
+                                    f"total={total_time:.2f}s, analyze={analyze_time:.2f}s"
                                 )
                                 print(perf_info)
 
                             return anomalies, file_info, perf_info
                         except Exception as e:
                             elapsed = time.time() - start_time
-                            error_msg=f"Error analyzing {log_file} after {elapsed:.2f}s: {e}"
+                            error_msg = f"Error analyzing {log_file} after {elapsed:.2f}s: {e}"
                             print(error_msg)
                             return [], None, error_msg
+                            
 
                     # ------------- concurrent execution setup -------------
                     cpu_count = os.cpu_count() or 2
@@ -1711,6 +1723,7 @@ def create_offline_anomaly_tab() -> None:
 
                     client_disconnected = False
                     last_successful_update = 0
+                    perf_msg = None
 
                     loop = asyncio.get_running_loop()
 
@@ -2618,5 +2631,5 @@ if __name__ == "__main__":
 
         # Performance tweaks
         binding_refresh_interval=0.5,
-        reconnect_timeout=30.0,
+        reconnect_timeout=300.0,
     )
